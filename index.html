@@ -676,11 +676,13 @@
 </html>`;
   }
 
-  async function fetchImageAsDataURL(src) {
+  async function fetchImageAsDataURL(src, timeoutMs = 250) {
     if (!src) return null;
     if (src.startsWith('data:')) return src;
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
     try {
-      const response = await fetch(src);
+      const response = await fetch(src, { signal: controller.signal });
       if (!response.ok) return null;
       const blob = await response.blob();
       return await new Promise(resolve => {
@@ -691,18 +693,27 @@
       });
     } catch {
       return null;
+    } finally {
+      clearTimeout(timeoutId);
     }
   }
 
-  async function getConfluenceClipboardPayload() {
+  async function getConfluenceClipboardPayload(maxTotalWaitMs = 450) {
     const container = document.createElement('div');
     container.innerHTML = getCleanPreviewHTML();
     const images = [...container.querySelectorAll('img')];
+    if (!images.length) return container.innerHTML.trim();
 
-    await Promise.all(images.map(async img => {
-      const dataUrl = await fetchImageAsDataURL(img.getAttribute('src') || '');
+    const embedTask = Promise.all(images.map(async img => {
+      const dataUrl = await fetchImageAsDataURL(img.getAttribute('src') || '', 250);
       if (dataUrl) img.setAttribute('src', dataUrl);
     }));
+
+    // Keep clipboard writes inside click activation window by bounding image embedding time.
+    await Promise.race([
+      embedTask,
+      new Promise(resolve => setTimeout(resolve, maxTotalWaitMs))
+    ]);
 
     return container.innerHTML.trim();
   }
