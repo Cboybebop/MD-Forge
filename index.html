@@ -102,6 +102,7 @@
     .btn.primary { background: var(--accent); color: #0f1117; border-color: var(--accent); font-weight: 600; }
     .btn.primary:hover { background: #f0b96a; border-color: #f0b96a; }
     .btn:disabled { opacity: 0.35; cursor: not-allowed; }
+    .btn.hidden { display: none; }
 
     .btn svg { width: 14px; height: 14px; flex-shrink: 0; }
 
@@ -553,6 +554,7 @@
   let isDirty       = false;  // unsaved changes flag
   let isUpdating    = false;  // mutex to prevent left↔right infinite update loops
   let statusTimer   = null;   // debounce for status badge auto-hide
+  const supportsFileSystemAccess = Boolean(window.showOpenFilePicker && window.showSaveFilePicker);
 
   // ── DOM refs ─────────────────────────────────────────────────────
   const mdInput      = document.getElementById('md-input');
@@ -672,6 +674,37 @@
 </head>
 <body>${fragment}</body>
 </html>`;
+  }
+
+  async function fetchImageAsDataURL(src) {
+    if (!src) return null;
+    if (src.startsWith('data:')) return src;
+    try {
+      const response = await fetch(src);
+      if (!response.ok) return null;
+      const blob = await response.blob();
+      return await new Promise(resolve => {
+        const reader = new FileReader();
+        reader.onload = () => resolve(reader.result);
+        reader.onerror = () => resolve(null);
+        reader.readAsDataURL(blob);
+      });
+    } catch {
+      return null;
+    }
+  }
+
+  async function getConfluenceClipboardPayload() {
+    const container = document.createElement('div');
+    container.innerHTML = getCleanPreviewHTML();
+    const images = [...container.querySelectorAll('img')];
+
+    await Promise.all(images.map(async img => {
+      const dataUrl = await fetchImageAsDataURL(img.getAttribute('src') || '');
+      if (dataUrl) img.setAttribute('src', dataUrl);
+    }));
+
+    return container.innerHTML.trim();
   }
 
   async function copyRichContent(html, plainText, successMessage, fallbackMessage) {
@@ -935,8 +968,9 @@
   //  bold, lists, tables, and code blocks.
   // ─────────────────────────────────────────────────────────────────
   btnConfluence.addEventListener('click', async () => {
+    const htmlWithEmbeddedImages = await getConfluenceClipboardPayload();
     await copyRichContent(
-      getCleanPreviewHTML(),
+      htmlWithEmbeddedImages,
       mdInput.value,
       'Copied for Confluence ✓',
       'Copied as plain text (limited browser support)'
@@ -1099,6 +1133,10 @@
   window.addEventListener('pageshow', e => {
     if (!e.persisted) resetDocumentState();
   });
+
+  if (!supportsFileSystemAccess) {
+    btnSave.classList.add('hidden');
+  }
 
   setTimeout(resetDocumentState, 0);
 
