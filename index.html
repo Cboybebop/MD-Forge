@@ -1,0 +1,880 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>MD Forge</title>
+
+  <!-- Marked: Markdown → HTML parser -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/marked/9.1.6/marked.min.js"></script>
+  <!-- Turndown: HTML → Markdown converter (for right-pane edits) -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/turndown/7.1.2/turndown.min.js"></script>
+
+  <style>
+    /* ─── Design tokens ───────────────────────────────────────────── */
+    :root {
+      --bg:          #0f1117;
+      --surface:     #171b26;
+      --border:      #2a2f3e;
+      --accent:      #e8a44a;
+      --accent-dim:  #a3712e;
+      --text:        #d4cfc8;
+      --text-dim:    #6b7280;
+      --text-bright: #f0ece4;
+      --green:       #5fb88a;
+      --red:         #e05c5c;
+      --mono:        'JetBrains Mono', 'Fira Code', 'Cascadia Code', monospace;
+      --serif:       'Georgia', 'Palatino', serif;
+      --sans:        'Trebuchet MS', 'Segoe UI', sans-serif;
+      --radius:      4px;
+    }
+
+    /* ─── Reset & base ────────────────────────────────────────────── */
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: var(--sans);
+      background: var(--bg);
+      color: var(--text);
+      height: 100vh;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+    }
+
+    /* ─── Top toolbar ─────────────────────────────────────────────── */
+    #toolbar {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 10px 16px;
+      background: var(--surface);
+      border-bottom: 1px solid var(--border);
+      flex-shrink: 0;
+      position: relative;
+    }
+
+    #toolbar .logo {
+      font-family: var(--mono);
+      font-size: 15px;
+      font-weight: 700;
+      color: var(--accent);
+      letter-spacing: 2px;
+      margin-right: 12px;
+      user-select: none;
+    }
+
+    #toolbar .logo span { color: var(--text-dim); }
+
+    /* Filename display in center */
+    #file-label {
+      position: absolute;
+      left: 50%;
+      transform: translateX(-50%);
+      font-family: var(--mono);
+      font-size: 12px;
+      color: var(--text-dim);
+      max-width: 300px;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    #file-label.dirty { color: var(--accent); }
+    #file-label.dirty::after { content: ' ●'; }
+
+    /* Buttons */
+    .btn {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      padding: 6px 14px;
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      background: transparent;
+      color: var(--text);
+      font-family: var(--mono);
+      font-size: 12px;
+      cursor: pointer;
+      transition: border-color 0.15s, color 0.15s, background 0.15s;
+      white-space: nowrap;
+    }
+    .btn:hover { border-color: var(--accent); color: var(--accent); }
+    .btn.primary { background: var(--accent); color: #0f1117; border-color: var(--accent); font-weight: 600; }
+    .btn.primary:hover { background: #f0b96a; border-color: #f0b96a; }
+    .btn:disabled { opacity: 0.35; cursor: not-allowed; }
+
+    .btn svg { width: 14px; height: 14px; flex-shrink: 0; }
+
+    #toolbar .spacer { flex: 1; }
+
+    /* Status badge */
+    #status-badge {
+      font-family: var(--mono);
+      font-size: 11px;
+      padding: 3px 10px;
+      border-radius: 20px;
+      background: transparent;
+      border: 1px solid transparent;
+      transition: all 0.3s;
+    }
+    #status-badge.saved   { color: var(--green); border-color: var(--green); }
+    #status-badge.copied  { color: var(--accent); border-color: var(--accent); }
+    #status-badge.error   { color: var(--red);   border-color: var(--red); }
+    #status-badge.hidden  { opacity: 0; }
+
+    /* ─── Main split layout ───────────────────────────────────────── */
+    #editor-area {
+      display: flex;
+      flex: 1;
+      overflow: hidden;
+    }
+
+    /* Each pane wrapper */
+    .pane {
+      display: flex;
+      flex-direction: column;
+      flex: 1;
+      overflow: hidden;
+      min-width: 0;
+    }
+
+    .pane + .pane { border-left: 1px solid var(--border); }
+
+    /* Pane header labels */
+    .pane-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 6px 14px;
+      background: var(--surface);
+      border-bottom: 1px solid var(--border);
+      flex-shrink: 0;
+    }
+    .pane-label {
+      font-family: var(--mono);
+      font-size: 11px;
+      color: var(--text-dim);
+      letter-spacing: 1px;
+      text-transform: uppercase;
+    }
+    .pane-actions { display: flex; gap: 6px; }
+
+    /* ─── Left pane: raw markdown textarea ───────────────────────── */
+    #md-input {
+      flex: 1;
+      width: 100%;
+      padding: 20px 22px;
+      background: var(--bg);
+      color: var(--text-bright);
+      font-family: var(--mono);
+      font-size: 13.5px;
+      line-height: 1.75;
+      border: none;
+      outline: none;
+      resize: none;
+      overflow-y: auto;
+      tab-size: 2;
+    }
+    /* Custom scrollbar */
+    #md-input::-webkit-scrollbar { width: 6px; }
+    #md-input::-webkit-scrollbar-track { background: transparent; }
+    #md-input::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+
+    /* ─── Resize handle ───────────────────────────────────────────── */
+    #drag-handle {
+      width: 5px;
+      background: var(--border);
+      cursor: col-resize;
+      flex-shrink: 0;
+      transition: background 0.15s;
+      position: relative;
+      z-index: 10;
+    }
+    #drag-handle:hover, #drag-handle.dragging { background: var(--accent); }
+
+    /* ─── Right pane: rendered preview ───────────────────────────── */
+    #preview {
+      flex: 1;
+      padding: 24px 28px;
+      background: var(--surface);
+      color: var(--text-bright);
+      font-family: var(--serif);
+      font-size: 15px;
+      line-height: 1.8;
+      overflow-y: auto;
+      outline: none;
+      /* contenteditable caret */
+      caret-color: var(--accent);
+    }
+    #preview::-webkit-scrollbar { width: 6px; }
+    #preview::-webkit-scrollbar-track { background: transparent; }
+    #preview::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+
+    /* ─── Rendered markdown styles ────────────────────────────────── */
+    #preview h1, #preview h2, #preview h3,
+    #preview h4, #preview h5, #preview h6 {
+      font-family: var(--sans);
+      color: var(--text-bright);
+      margin-top: 1.5em;
+      margin-bottom: 0.4em;
+      line-height: 1.3;
+    }
+    #preview h1 { font-size: 2em; border-bottom: 1px solid var(--border); padding-bottom: 0.3em; }
+    #preview h2 { font-size: 1.5em; border-bottom: 1px solid var(--border); padding-bottom: 0.25em; }
+    #preview h3 { font-size: 1.2em; color: var(--accent); }
+    #preview h4, #preview h5, #preview h6 { font-size: 1em; color: var(--text-dim); }
+
+    #preview p { margin-bottom: 1em; }
+
+    #preview a { color: var(--accent); text-decoration: underline; }
+    #preview a:hover { color: #f0b96a; }
+
+    #preview strong { color: var(--text-bright); font-weight: 700; }
+    #preview em { font-style: italic; color: #c8c0b4; }
+
+    #preview code {
+      font-family: var(--mono);
+      font-size: 0.85em;
+      background: rgba(232, 164, 74, 0.1);
+      border: 1px solid rgba(232, 164, 74, 0.2);
+      border-radius: 3px;
+      padding: 1px 5px;
+      color: var(--accent);
+    }
+
+    #preview pre {
+      background: var(--bg);
+      border: 1px solid var(--border);
+      border-left: 3px solid var(--accent);
+      border-radius: var(--radius);
+      padding: 16px 18px;
+      overflow-x: auto;
+      margin: 1.2em 0;
+    }
+    #preview pre code {
+      background: none;
+      border: none;
+      padding: 0;
+      font-size: 13px;
+      color: var(--text-bright);
+    }
+
+    #preview blockquote {
+      margin: 1em 0;
+      padding: 10px 18px;
+      border-left: 3px solid var(--accent-dim);
+      background: rgba(232, 164, 74, 0.05);
+      color: #a09890;
+      font-style: italic;
+    }
+
+    #preview ul, #preview ol {
+      margin: 0.5em 0 1em 1.5em;
+    }
+    #preview li { margin-bottom: 0.25em; }
+
+    #preview table {
+      border-collapse: collapse;
+      width: 100%;
+      margin: 1em 0;
+      font-family: var(--sans);
+      font-size: 13.5px;
+    }
+    #preview th {
+      background: var(--bg);
+      color: var(--accent);
+      font-weight: 600;
+      padding: 8px 12px;
+      border: 1px solid var(--border);
+      text-align: left;
+    }
+    #preview td {
+      padding: 7px 12px;
+      border: 1px solid var(--border);
+    }
+    #preview tr:nth-child(even) td { background: rgba(255,255,255,0.02); }
+
+    #preview hr {
+      border: none;
+      border-top: 1px solid var(--border);
+      margin: 2em 0;
+    }
+
+    #preview img { max-width: 100%; border-radius: var(--radius); }
+
+    /* ─── Empty state ─────────────────────────────────────────────── */
+    #empty-state {
+      position: absolute;
+      inset: 0;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 16px;
+      pointer-events: none;
+      opacity: 0.45;
+    }
+    #empty-state svg { width: 48px; height: 48px; color: var(--text-dim); }
+    #empty-state p  {
+      font-family: var(--mono);
+      font-size: 13px;
+      color: var(--text-dim);
+      text-align: center;
+      line-height: 1.6;
+    }
+
+    /* ─── Kbd hint ────────────────────────────────────────────────── */
+    kbd {
+      font-family: var(--mono);
+      font-size: 10px;
+      background: var(--bg);
+      border: 1px solid var(--border);
+      border-radius: 3px;
+      padding: 1px 5px;
+      color: var(--text-dim);
+    }
+
+    /* ─── Confluence tooltip ──────────────────────────────────────── */
+    .btn[data-tooltip] { position: relative; }
+    .btn[data-tooltip]::after {
+      content: attr(data-tooltip);
+      position: absolute;
+      bottom: calc(100% + 6px);
+      right: 0;
+      background: var(--bg);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 4px 10px;
+      font-size: 11px;
+      color: var(--text-dim);
+      white-space: nowrap;
+      pointer-events: none;
+      opacity: 0;
+      transition: opacity 0.15s;
+    }
+    .btn[data-tooltip]:hover::after { opacity: 1; }
+  </style>
+</head>
+<body>
+
+<!-- ─── Toolbar ──────────────────────────────────────────────────── -->
+<div id="toolbar">
+  <span class="logo">MD<span>//</span>FORGE</span>
+
+  <!-- Open file -->
+  <button class="btn" id="btn-open">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+      <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/>
+    </svg>
+    Open
+  </button>
+
+  <!-- New file -->
+  <button class="btn" id="btn-new">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+      <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
+      <polyline points="14 2 14 8 20 8"/>
+      <line x1="12" y1="11" x2="12" y2="17"/>
+      <line x1="9"  y1="14" x2="15" y2="14"/>
+    </svg>
+    New
+  </button>
+
+  <!-- Save (disabled until a file handle exists) -->
+  <button class="btn primary" id="btn-save" disabled>
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+      <path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/>
+      <polyline points="17 21 17 13 7 13 7 21"/>
+      <polyline points="7 3 7 8 15 8"/>
+    </svg>
+    Save
+    <kbd>⌘S</kbd>
+  </button>
+
+  <!-- Save As -->
+  <button class="btn" id="btn-save-as">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+      <polyline points="15 3 21 3 21 9"/>
+      <path d="M10 14L21 3"/>
+      <path d="M21 16v5H3V5h5"/>
+    </svg>
+    Save As
+  </button>
+
+  <!-- Current filename (center) -->
+  <div id="file-label">No file open</div>
+
+  <div class="spacer"></div>
+
+  <!-- Status badge (fades in/out) -->
+  <span id="status-badge" class="hidden"></span>
+</div>
+
+<!-- ─── Editor area ───────────────────────────────────────────────── -->
+<div id="editor-area">
+
+  <!-- Left pane: raw markdown -->
+  <div class="pane" id="left-pane" style="width:50%">
+    <div class="pane-header">
+      <span class="pane-label">Markdown Source</span>
+    </div>
+    <textarea id="md-input" spellcheck="false" placeholder="# Start typing markdown here...&#10;&#10;Or click **Open** to load an existing .md file."></textarea>
+  </div>
+
+  <!-- Draggable divider -->
+  <div id="drag-handle"></div>
+
+  <!-- Right pane: rendered preview -->
+  <div class="pane" id="right-pane" style="flex:1">
+    <div class="pane-header">
+      <span class="pane-label">Preview (Editable)</span>
+      <div class="pane-actions">
+        <button class="btn" id="btn-copy-confluence" data-tooltip="Copies rich HTML for pasting into Confluence">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <rect x="9" y="9" width="13" height="13" rx="2" ry="2"/>
+            <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/>
+          </svg>
+          Copy for Confluence
+        </button>
+      </div>
+    </div>
+    <!-- contenteditable so the user can edit rendered HTML directly -->
+    <div id="preview" contenteditable="true" spellcheck="true">
+      <div id="empty-state">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+          <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
+          <polyline points="14 2 14 8 20 8"/>
+          <line x1="16" y1="13" x2="8" y2="13"/>
+          <line x1="16" y1="17" x2="8" y2="17"/>
+          <polyline points="10 9 9 9 8 9"/>
+        </svg>
+        <p>No content yet.<br>Start typing in the left pane<br>or open a file.</p>
+      </div>
+    </div>
+  </div>
+
+</div>
+
+<!-- Hidden file input as fallback (not actually used for save, just open) -->
+<input type="file" id="file-input-fallback" accept=".md,.txt,.markdown" style="display:none" />
+
+<script>
+  // ─────────────────────────────────────────────────────────────────
+  //  MD FORGE — Core application logic
+  // ─────────────────────────────────────────────────────────────────
+
+  // ── State ────────────────────────────────────────────────────────
+  let fileHandle    = null;   // FileSystemFileHandle from File System Access API
+  let isDirty       = false;  // unsaved changes flag
+  let isUpdating    = false;  // mutex to prevent left↔right infinite update loops
+  let statusTimer   = null;   // debounce for status badge auto-hide
+
+  // ── DOM refs ─────────────────────────────────────────────────────
+  const mdInput      = document.getElementById('md-input');
+  const preview      = document.getElementById('preview');
+  const fileLabel    = document.getElementById('file-label');
+  const statusBadge  = document.getElementById('status-badge');
+  const btnOpen      = document.getElementById('btn-open');
+  const btnNew       = document.getElementById('btn-new');
+  const btnSave      = document.getElementById('btn-save');
+  const btnSaveAs    = document.getElementById('btn-save-as');
+  const btnConfluence= document.getElementById('btn-copy-confluence');
+  const emptyState   = document.getElementById('empty-state');
+
+  // ── Marked.js configuration ──────────────────────────────────────
+  // Enable GitHub-flavored markdown (tables, strikethrough, etc.)
+  marked.setOptions({
+    gfm: true,
+    breaks: true,
+  });
+
+  // ── Turndown configuration ────────────────────────────────────────
+  // Turndown converts HTML back to Markdown when the preview is edited
+  const turndown = new TurndownService({
+    headingStyle: 'atx',          // Use # style headings
+    codeBlockStyle: 'fenced',     // Use ``` code fences
+    bulletListMarker: '-',
+  });
+
+  // Custom rule: preserve <del> as ~~strikethrough~~
+  turndown.addRule('strikethrough', {
+    filter: ['del', 's'],
+    replacement: content => `~~${content}~~`
+  });
+
+
+  // ─────────────────────────────────────────────────────────────────
+  //  RENDERING: Left → Right
+  //  Called whenever the textarea content changes.
+  // ─────────────────────────────────────────────────────────────────
+  function renderMarkdown(md) {
+    if (isUpdating) return;
+    isUpdating = true;
+
+    const html = marked.parse(md);
+
+    // If md is empty, show the empty state placeholder
+    if (!md.trim()) {
+      preview.innerHTML = `
+        <div id="empty-state">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+            <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
+            <polyline points="14 2 14 8 20 8"/>
+            <line x1="16" y1="13" x2="8" y2="13"/>
+            <line x1="16" y1="17" x2="8" y2="17"/>
+          </svg>
+          <p>No content yet.<br>Start typing in the left pane<br>or open a file.</p>
+        </div>`;
+    } else {
+      preview.innerHTML = html;
+    }
+
+    isUpdating = false;
+  }
+
+  // ─────────────────────────────────────────────────────────────────
+  //  BACK-CONVERSION: Right → Left
+  //  Called when the contenteditable preview is edited directly.
+  //  Uses Turndown to convert the preview's HTML back to Markdown.
+  // ─────────────────────────────────────────────────────────────────
+  function syncPreviewToMarkdown() {
+    if (isUpdating) return;
+    isUpdating = true;
+
+    // Convert current preview HTML → markdown
+    const md = turndown.turndown(preview.innerHTML);
+
+    // Save the textarea's scroll position so we don't jump
+    const scrollTop = mdInput.scrollTop;
+    mdInput.value = md;
+    mdInput.scrollTop = scrollTop;
+
+    markDirty();
+    isUpdating = false;
+  }
+
+
+  // ─────────────────────────────────────────────────────────────────
+  //  DIRTY STATE helpers
+  // ─────────────────────────────────────────────────────────────────
+  function markDirty() {
+    isDirty = true;
+    fileLabel.classList.add('dirty');
+    btnSave.disabled = !fileHandle;  // only enable save if we have a handle
+  }
+
+  function markClean() {
+    isDirty = false;
+    fileLabel.classList.remove('dirty');
+  }
+
+  function setFileLabel(name) {
+    fileLabel.textContent = name;
+    markClean();
+  }
+
+
+  // ─────────────────────────────────────────────────────────────────
+  //  STATUS BADGE: shows a brief message then fades out
+  // ─────────────────────────────────────────────────────────────────
+  function showStatus(msg, type = 'saved', duration = 2200) {
+    clearTimeout(statusTimer);
+    statusBadge.textContent   = msg;
+    statusBadge.className     = type;   // 'saved' | 'copied' | 'error'
+    statusTimer = setTimeout(() => {
+      statusBadge.className = 'hidden';
+    }, duration);
+  }
+
+
+  // ─────────────────────────────────────────────────────────────────
+  //  FILE SYSTEM ACCESS API helpers
+  //  The modern showOpenFilePicker / showSaveFilePicker APIs let us
+  //  read and write files directly without server round-trips.
+  //  We fall back gracefully when the browser doesn't support it.
+  // ─────────────────────────────────────────────────────────────────
+
+  /** Opens a file picker and returns {handle, text} or null on cancel */
+  async function pickAndReadFile() {
+    if (!window.showOpenFilePicker) {
+      // Fallback: use a hidden <input type="file">
+      return await fallbackOpenFile();
+    }
+    try {
+      const [handle] = await window.showOpenFilePicker({
+        types: [{ description: 'Markdown files', accept: { 'text/markdown': ['.md', '.markdown', '.txt'] } }],
+      });
+      const file = await handle.getFile();
+      const text = await file.text();
+      return { handle, text, name: file.name };
+    } catch (e) {
+      if (e.name !== 'AbortError') showStatus('Could not open file', 'error');
+      return null;
+    }
+  }
+
+  /** Fallback open using hidden <input type="file"> (no save-back handle) */
+  function fallbackOpenFile() {
+    return new Promise(resolve => {
+      const input = document.getElementById('file-input-fallback');
+      input.onchange = async () => {
+        const file = input.files[0];
+        if (!file) { resolve(null); return; }
+        const text = await file.text();
+        resolve({ handle: null, text, name: file.name });
+        input.value = '';   // reset so same file can be opened again
+      };
+      input.click();
+    });
+  }
+
+  /** Writes content to an existing FileSystemFileHandle */
+  async function writeToHandle(handle, content) {
+    const writable = await handle.createWritable();
+    await writable.write(content);
+    await writable.close();
+  }
+
+  /** Opens a save-as picker and writes file; returns the new handle or null */
+  async function saveAs(content) {
+    if (!window.showSaveFilePicker) {
+      // Fallback: trigger a download
+      fallbackDownload(content, fileLabel.textContent || 'document.md');
+      return null;
+    }
+    try {
+      const handle = await window.showSaveFilePicker({
+        suggestedName: fileLabel.textContent || 'document.md',
+        types: [{ description: 'Markdown file', accept: { 'text/markdown': ['.md'] } }],
+      });
+      await writeToHandle(handle, content);
+      return handle;
+    } catch (e) {
+      if (e.name !== 'AbortError') showStatus('Save failed', 'error');
+      return null;
+    }
+  }
+
+  /** Triggers a plain download as fallback when File System Access API isn't available */
+  function fallbackDownload(content, filename) {
+    const blob = new Blob([content], { type: 'text/markdown' });
+    const url  = URL.createObjectURL(blob);
+    const a    = document.createElement('a');
+    a.href     = url;
+    a.download = filename;
+    a.click();
+    URL.revokeObjectURL(url);
+    showStatus('Downloaded ✓', 'saved');
+  }
+
+
+  // ─────────────────────────────────────────────────────────────────
+  //  OPEN FILE
+  // ─────────────────────────────────────────────────────────────────
+  btnOpen.addEventListener('click', async () => {
+    if (isDirty && !confirm('You have unsaved changes. Open a new file anyway?')) return;
+
+    const result = await pickAndReadFile();
+    if (!result) return;
+
+    fileHandle = result.handle;
+    mdInput.value = result.text;
+    renderMarkdown(result.text);
+    setFileLabel(result.name);
+    // Enable save only when we have a writable handle
+    btnSave.disabled = !fileHandle;
+    showStatus('Opened ✓', 'saved');
+  });
+
+
+  // ─────────────────────────────────────────────────────────────────
+  //  NEW FILE
+  // ─────────────────────────────────────────────────────────────────
+  btnNew.addEventListener('click', () => {
+    if (isDirty && !confirm('You have unsaved changes. Start a new file anyway?')) return;
+    fileHandle = null;
+    mdInput.value = '';
+    renderMarkdown('');
+    setFileLabel('Untitled.md');
+    btnSave.disabled = true;
+  });
+
+
+  // ─────────────────────────────────────────────────────────────────
+  //  SAVE (overwrites the existing handle)
+  // ─────────────────────────────────────────────────────────────────
+  btnSave.addEventListener('click', async () => {
+    if (!fileHandle) return;
+    try {
+      await writeToHandle(fileHandle, mdInput.value);
+      markClean();
+      showStatus('Saved ✓', 'saved');
+    } catch (e) {
+      showStatus('Save failed', 'error');
+    }
+  });
+
+
+  // ─────────────────────────────────────────────────────────────────
+  //  SAVE AS
+  // ─────────────────────────────────────────────────────────────────
+  btnSaveAs.addEventListener('click', async () => {
+    const handle = await saveAs(mdInput.value);
+    if (handle) {
+      fileHandle = handle;
+      const file = await handle.getFile();
+      setFileLabel(file.name);
+      btnSave.disabled = false;
+      showStatus('Saved ✓', 'saved');
+    }
+  });
+
+
+  // ─────────────────────────────────────────────────────────────────
+  //  COPY FOR CONFLUENCE
+  //  Copies the rendered preview HTML to the clipboard as rich text.
+  //  When pasted into Confluence's editor, it preserves headings,
+  //  bold, lists, tables, and code blocks.
+  // ─────────────────────────────────────────────────────────────────
+  btnConfluence.addEventListener('click', async () => {
+    // Build a clean copy of the preview HTML (strip empty-state placeholder)
+    const tempDiv   = document.createElement('div');
+    tempDiv.innerHTML = preview.innerHTML;
+    const placeholder = tempDiv.querySelector('#empty-state');
+    if (placeholder) placeholder.remove();
+    const cleanHTML = tempDiv.innerHTML;
+
+    if (!cleanHTML.trim()) {
+      showStatus('Nothing to copy', 'error');
+      return;
+    }
+
+    try {
+      // ClipboardItem lets us write both text/html and text/plain simultaneously.
+      // Confluence (and most rich-text editors) will use text/html when it's available.
+      const htmlBlob  = new Blob([cleanHTML],         { type: 'text/html' });
+      const textBlob  = new Blob([mdInput.value],     { type: 'text/plain' });
+      await navigator.clipboard.write([
+        new ClipboardItem({ 'text/html': htmlBlob, 'text/plain': textBlob })
+      ]);
+      showStatus('Copied for Confluence ✓', 'copied');
+    } catch (e) {
+      // Fallback: plain-text copy if ClipboardItem isn't allowed
+      try {
+        await navigator.clipboard.writeText(mdInput.value);
+        showStatus('Copied as plain text (limited browser support)', 'copied', 3500);
+      } catch {
+        showStatus('Copy failed — check clipboard permissions', 'error', 3500);
+      }
+    }
+  });
+
+
+  // ─────────────────────────────────────────────────────────────────
+  //  LEFT PANE EVENTS: textarea → render
+  // ─────────────────────────────────────────────────────────────────
+  mdInput.addEventListener('input', () => {
+    renderMarkdown(mdInput.value);
+    markDirty();
+  });
+
+  // Handle Tab key in textarea: insert 2 spaces instead of losing focus
+  mdInput.addEventListener('keydown', e => {
+    if (e.key === 'Tab') {
+      e.preventDefault();
+      const start = mdInput.selectionStart;
+      const end   = mdInput.selectionEnd;
+      mdInput.value = mdInput.value.substring(0, start) + '  ' + mdInput.value.substring(end);
+      mdInput.selectionStart = mdInput.selectionEnd = start + 2;
+      renderMarkdown(mdInput.value);
+      markDirty();
+    }
+  });
+
+
+  // ─────────────────────────────────────────────────────────────────
+  //  RIGHT PANE EVENTS: contenteditable preview → back-convert
+  //  We use a small debounce (300ms) so we don't hammer Turndown on
+  //  every keystroke — only after the user pauses typing.
+  // ─────────────────────────────────────────────────────────────────
+  let previewDebounceTimer = null;
+
+  preview.addEventListener('input', () => {
+    clearTimeout(previewDebounceTimer);
+    previewDebounceTimer = setTimeout(syncPreviewToMarkdown, 300);
+  });
+
+
+  // ─────────────────────────────────────────────────────────────────
+  //  KEYBOARD SHORTCUTS
+  // ─────────────────────────────────────────────────────────────────
+  document.addEventListener('keydown', async e => {
+    const meta = e.metaKey || e.ctrlKey;
+
+    if (meta && e.key === 's') {
+      e.preventDefault();
+      if (fileHandle) {
+        // Ctrl/Cmd+S: save to existing file
+        await writeToHandle(fileHandle, mdInput.value).then(() => {
+          markClean();
+          showStatus('Saved ✓', 'saved');
+        }).catch(() => showStatus('Save failed', 'error'));
+      } else {
+        // No handle yet — trigger Save As
+        btnSaveAs.click();
+      }
+    }
+
+    if (meta && e.key === 'o') {
+      e.preventDefault();
+      btnOpen.click();
+    }
+  });
+
+
+  // ─────────────────────────────────────────────────────────────────
+  //  DRAG-TO-RESIZE the split panes
+  // ─────────────────────────────────────────────────────────────────
+  const dragHandle = document.getElementById('drag-handle');
+  const leftPane   = document.getElementById('left-pane');
+  const editorArea = document.getElementById('editor-area');
+  let   isDragging = false;
+
+  dragHandle.addEventListener('mousedown', e => {
+    isDragging = true;
+    dragHandle.classList.add('dragging');
+    document.body.style.cursor     = 'col-resize';
+    document.body.style.userSelect = 'none';  // prevent text selection while dragging
+  });
+
+  document.addEventListener('mousemove', e => {
+    if (!isDragging) return;
+    const rect  = editorArea.getBoundingClientRect();
+    const ratio = (e.clientX - rect.left) / rect.width;
+    // Clamp between 20% and 80% so neither pane disappears
+    const pct   = Math.min(0.80, Math.max(0.20, ratio));
+    leftPane.style.width = `${pct * 100}%`;
+  });
+
+  document.addEventListener('mouseup', () => {
+    if (!isDragging) return;
+    isDragging = false;
+    dragHandle.classList.remove('dragging');
+    document.body.style.cursor     = '';
+    document.body.style.userSelect = '';
+  });
+
+
+  // ─────────────────────────────────────────────────────────────────
+  //  WARN ON UNLOAD if there are unsaved changes
+  // ─────────────────────────────────────────────────────────────────
+  window.addEventListener('beforeunload', e => {
+    if (isDirty) {
+      e.preventDefault();
+      e.returnValue = '';
+    }
+  });
+
+</script>
+</body>
+</html>
