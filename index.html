@@ -159,6 +159,60 @@
     }
     .pane-actions { display: flex; gap: 6px; }
 
+    .wysiwyg-toolbar {
+      display: flex;
+      align-items: center;
+      gap: 4px;
+      flex-wrap: wrap;
+      justify-content: flex-end;
+    }
+
+    .format-select,
+    .format-btn {
+      min-height: 30px;
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      background: var(--bg);
+      color: var(--text);
+      font-family: var(--mono);
+      font-size: 12px;
+      transition: border-color 0.15s, color 0.15s, background 0.15s;
+    }
+
+    .format-select {
+      width: 108px;
+      padding: 0 8px;
+      cursor: pointer;
+    }
+
+    .format-btn {
+      width: 30px;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      font-weight: 700;
+      cursor: pointer;
+    }
+
+    .format-btn:hover,
+    .format-select:hover {
+      border-color: var(--accent);
+      color: var(--accent);
+    }
+
+    .format-btn.active {
+      background: rgba(232, 164, 74, 0.14);
+      border-color: var(--accent);
+      color: var(--accent);
+    }
+
+    .format-divider {
+      width: 1px;
+      height: 22px;
+      background: var(--border);
+      margin: 0 2px;
+    }
+
     /* ─── Left pane: raw markdown textarea ───────────────────────── */
     #md-input {
       flex: 1;
@@ -334,9 +388,13 @@
       color: var(--text-dim);
     }
 
-    /* ─── Confluence tooltip ──────────────────────────────────────── */
-    .btn[data-tooltip] { position: relative; }
-    .btn[data-tooltip]::after {
+    /* ─── Tooltips ────────────────────────────────────────────────── */
+    .btn[data-tooltip],
+    .format-btn[data-tooltip],
+    .format-select[data-tooltip] { position: relative; }
+    .btn[data-tooltip]::after,
+    .format-btn[data-tooltip]::after,
+    .format-select[data-tooltip]::after {
       content: attr(data-tooltip);
       position: absolute;
       bottom: calc(100% + 6px);
@@ -351,8 +409,11 @@
       pointer-events: none;
       opacity: 0;
       transition: opacity 0.15s;
+      z-index: 20;
     }
-    .btn[data-tooltip]:hover::after { opacity: 1; }
+    .btn[data-tooltip]:hover::after,
+    .format-btn[data-tooltip]:hover::after,
+    .format-select[data-tooltip]:hover::after { opacity: 1; }
   </style>
 </head>
 <body>
@@ -418,7 +479,7 @@
     <div class="pane-header">
       <span class="pane-label">Markdown Source</span>
     </div>
-    <textarea id="md-input" spellcheck="false" placeholder="# Start typing markdown here...&#10;&#10;Or click **Open** to load an existing .md file."></textarea>
+    <textarea id="md-input" spellcheck="false" autocomplete="off" placeholder="# Start typing markdown here...&#10;&#10;Or click **Open** to load an existing .md file."></textarea>
   </div>
 
   <!-- Draggable divider -->
@@ -428,13 +489,37 @@
   <div class="pane" id="right-pane" style="flex:1">
     <div class="pane-header">
       <span class="pane-label">Preview (Editable)</span>
-      <div class="pane-actions">
+      <div class="pane-actions wysiwyg-toolbar" aria-label="Preview formatting controls">
+        <select class="format-select" id="format-block" data-tooltip="Text style" aria-label="Text style">
+          <option value="P">Paragraph</option>
+          <option value="H1">Heading 1</option>
+          <option value="H2">Heading 2</option>
+          <option value="H3">Heading 3</option>
+          <option value="H4">Heading 4</option>
+          <option value="BLOCKQUOTE">Quote</option>
+          <option value="PRE">Code block</option>
+        </select>
+        <button class="format-btn" type="button" data-command="bold" data-tooltip="Bold" aria-label="Bold">B</button>
+        <button class="format-btn" type="button" data-command="italic" data-tooltip="Italic" aria-label="Italic"><em>I</em></button>
+        <button class="format-btn" type="button" data-command="underline" data-tooltip="Underline" aria-label="Underline"><u>U</u></button>
+        <button class="format-btn" type="button" data-command="strikeThrough" data-tooltip="Strikethrough" aria-label="Strikethrough"><s>S</s></button>
+        <button class="format-btn" type="button" data-command="insertUnorderedList" data-tooltip="Bullet list" aria-label="Bullet list">•</button>
+        <button class="format-btn" type="button" data-command="insertOrderedList" data-tooltip="Numbered list" aria-label="Numbered list">1.</button>
+        <button class="format-btn" type="button" id="btn-link" data-tooltip="Link" aria-label="Link">↗</button>
+        <div class="format-divider" aria-hidden="true"></div>
         <button class="btn" id="btn-copy-confluence" data-tooltip="Copies rich HTML for pasting into Confluence">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
             <rect x="9" y="9" width="13" height="13" rx="2" ry="2"/>
             <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/>
           </svg>
           Copy for Confluence
+        </button>
+        <button class="btn" id="btn-copy-word" data-tooltip="Copies Word-friendly rich HTML with document styling">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M4 4h16v16H4z"/>
+            <path d="M7 8l2 8 3-8 3 8 2-8"/>
+          </svg>
+          Copy for Word
         </button>
       </div>
     </div>
@@ -479,7 +564,11 @@
   const btnSave      = document.getElementById('btn-save');
   const btnSaveAs    = document.getElementById('btn-save-as');
   const btnConfluence= document.getElementById('btn-copy-confluence');
-  const emptyState   = document.getElementById('empty-state');
+  const btnWord      = document.getElementById('btn-copy-word');
+  const formatBlock  = document.getElementById('format-block');
+  const formatButtons= document.querySelectorAll('.format-btn[data-command]');
+  const btnLink      = document.getElementById('btn-link');
+  let savedSelection = null;
 
   // ── Marked.js configuration ──────────────────────────────────────
   // Enable GitHub-flavored markdown (tables, strikethrough, etc.)
@@ -542,7 +631,7 @@
     isUpdating = true;
 
     // Convert current preview HTML → markdown
-    const md = turndown.turndown(preview.innerHTML);
+    const md = turndown.turndown(getCleanPreviewHTML());
 
     // Save the textarea's scroll position so we don't jump
     const scrollTop = mdInput.scrollTop;
@@ -551,6 +640,115 @@
 
     markDirty();
     isUpdating = false;
+  }
+
+  function getCleanPreviewHTML() {
+    const tempDiv = document.createElement('div');
+    tempDiv.innerHTML = preview.innerHTML;
+    const placeholder = tempDiv.querySelector('#empty-state');
+    if (placeholder) placeholder.remove();
+    return tempDiv.innerHTML.trim();
+  }
+
+  function getWordHTML(fragment) {
+    return `<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <style>
+    body { font-family: Calibri, Arial, sans-serif; font-size: 11pt; line-height: 1.35; color: #111; }
+    h1, h2, h3, h4, h5, h6 { font-family: Calibri, Arial, sans-serif; font-weight: 700; margin: 12pt 0 6pt; }
+    h1 { font-size: 20pt; }
+    h2 { font-size: 16pt; }
+    h3 { font-size: 13pt; }
+    p { margin: 0 0 8pt; }
+    pre { font-family: Consolas, monospace; font-size: 10pt; background: #f3f4f6; padding: 8pt; }
+    code { font-family: Consolas, monospace; }
+    blockquote { border-left: 3pt solid #9ca3af; margin: 8pt 0; padding-left: 10pt; color: #374151; }
+    table { border-collapse: collapse; width: 100%; }
+    th, td { border: 1pt solid #9ca3af; padding: 4pt 6pt; }
+    th { background: #f3f4f6; font-weight: 700; }
+  </style>
+</head>
+<body>${fragment}</body>
+</html>`;
+  }
+
+  async function copyRichContent(html, plainText, successMessage, fallbackMessage) {
+    if (!html.trim()) {
+      showStatus('Nothing to copy', 'error');
+      return;
+    }
+
+    try {
+      const htmlBlob = new Blob([html], { type: 'text/html' });
+      const textBlob = new Blob([plainText], { type: 'text/plain' });
+      await navigator.clipboard.write([
+        new ClipboardItem({ 'text/html': htmlBlob, 'text/plain': textBlob })
+      ]);
+      showStatus(successMessage, 'copied');
+    } catch (e) {
+      try {
+        await navigator.clipboard.writeText(plainText);
+        showStatus(fallbackMessage, 'copied', 3500);
+      } catch {
+        showStatus('Copy failed — check clipboard permissions', 'error', 3500);
+      }
+    }
+  }
+
+  function savePreviewSelection() {
+    const selection = window.getSelection();
+    if (!selection || selection.rangeCount === 0) return;
+    const range = selection.getRangeAt(0);
+    if (preview.contains(range.commonAncestorContainer)) {
+      savedSelection = range.cloneRange();
+    }
+  }
+
+  function restorePreviewSelection() {
+    preview.focus();
+    if (!savedSelection) return;
+    const selection = window.getSelection();
+    selection.removeAllRanges();
+    selection.addRange(savedSelection);
+  }
+
+  function runFormatCommand(command, value = null) {
+    restorePreviewSelection();
+    document.execCommand(command, false, value);
+    savePreviewSelection();
+    syncPreviewToMarkdown();
+    updateFormatState();
+  }
+
+  function getCurrentBlockTag() {
+    const selection = window.getSelection();
+    if (!selection || selection.rangeCount === 0) return 'P';
+    let node = selection.anchorNode;
+    if (node && node.nodeType === Node.TEXT_NODE) node = node.parentElement;
+    const block = node?.closest?.('h1,h2,h3,h4,blockquote,pre,p,li');
+    if (!block || !preview.contains(block)) return 'P';
+    return block.tagName;
+  }
+
+  function updateFormatState() {
+    ['bold', 'italic', 'underline', 'strikeThrough', 'insertUnorderedList', 'insertOrderedList'].forEach(command => {
+      const button = document.querySelector(`.format-btn[data-command="${command}"]`);
+      if (!button) return;
+      button.classList.toggle('active', document.queryCommandState(command));
+    });
+
+    const currentTag = getCurrentBlockTag();
+    formatBlock.value = [...formatBlock.options].some(option => option.value === currentTag) ? currentTag : 'P';
+  }
+
+  function resetDocumentState(label = 'No file open') {
+    fileHandle = null;
+    mdInput.value = '';
+    renderMarkdown('');
+    setFileLabel(label);
+    btnSave.disabled = true;
   }
 
 
@@ -737,36 +935,47 @@
   //  bold, lists, tables, and code blocks.
   // ─────────────────────────────────────────────────────────────────
   btnConfluence.addEventListener('click', async () => {
-    // Build a clean copy of the preview HTML (strip empty-state placeholder)
-    const tempDiv   = document.createElement('div');
-    tempDiv.innerHTML = preview.innerHTML;
-    const placeholder = tempDiv.querySelector('#empty-state');
-    if (placeholder) placeholder.remove();
-    const cleanHTML = tempDiv.innerHTML;
+    await copyRichContent(
+      getCleanPreviewHTML(),
+      mdInput.value,
+      'Copied for Confluence ✓',
+      'Copied as plain text (limited browser support)'
+    );
+  });
 
+  btnWord.addEventListener('click', async () => {
+    const cleanHTML = getCleanPreviewHTML();
     if (!cleanHTML.trim()) {
       showStatus('Nothing to copy', 'error');
       return;
     }
+    await copyRichContent(
+      getWordHTML(cleanHTML),
+      preview.innerText.trim() || mdInput.value,
+      'Copied for Word ✓',
+      'Copied as plain text (limited browser support)'
+    );
+  });
 
-    try {
-      // ClipboardItem lets us write both text/html and text/plain simultaneously.
-      // Confluence (and most rich-text editors) will use text/html when it's available.
-      const htmlBlob  = new Blob([cleanHTML],         { type: 'text/html' });
-      const textBlob  = new Blob([mdInput.value],     { type: 'text/plain' });
-      await navigator.clipboard.write([
-        new ClipboardItem({ 'text/html': htmlBlob, 'text/plain': textBlob })
-      ]);
-      showStatus('Copied for Confluence ✓', 'copied');
-    } catch (e) {
-      // Fallback: plain-text copy if ClipboardItem isn't allowed
-      try {
-        await navigator.clipboard.writeText(mdInput.value);
-        showStatus('Copied as plain text (limited browser support)', 'copied', 3500);
-      } catch {
-        showStatus('Copy failed — check clipboard permissions', 'error', 3500);
-      }
-    }
+
+  // ─────────────────────────────────────────────────────────────────
+  //  WYSIWYG CONTROLS
+  // ─────────────────────────────────────────────────────────────────
+  formatButtons.forEach(button => {
+    button.addEventListener('mousedown', e => e.preventDefault());
+    button.addEventListener('click', () => runFormatCommand(button.dataset.command));
+  });
+
+  btnLink.addEventListener('mousedown', e => e.preventDefault());
+  btnLink.addEventListener('click', () => {
+    restorePreviewSelection();
+    const href = prompt('Link URL');
+    if (!href) return;
+    runFormatCommand('createLink', href);
+  });
+
+  formatBlock.addEventListener('change', () => {
+    runFormatCommand('formatBlock', `<${formatBlock.value}>`);
   });
 
 
@@ -803,6 +1012,18 @@
     clearTimeout(previewDebounceTimer);
     previewDebounceTimer = setTimeout(syncPreviewToMarkdown, 300);
   });
+
+  preview.addEventListener('keyup', () => {
+    savePreviewSelection();
+    updateFormatState();
+  });
+
+  preview.addEventListener('mouseup', () => {
+    savePreviewSelection();
+    updateFormatState();
+  });
+
+  preview.addEventListener('focus', savePreviewSelection);
 
 
   // ─────────────────────────────────────────────────────────────────
@@ -874,6 +1095,12 @@
       e.returnValue = '';
     }
   });
+
+  window.addEventListener('pageshow', e => {
+    if (!e.persisted) resetDocumentState();
+  });
+
+  setTimeout(resetDocumentState, 0);
 
 </script>
 </body>

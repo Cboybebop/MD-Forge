@@ -7,7 +7,9 @@ A dual-pane Markdown editor that runs entirely in the browser — no build step,
 - **Open & Save** `.md` files directly from/to disk via the File System Access API
 - **Live dual-pane sync** — edit raw Markdown on the left, see rendered HTML on the right (and vice-versa)
 - **Editable preview** — click anywhere in the right pane to edit rendered content; changes sync back to Markdown automatically
+- **WYSIWYG controls** — format preview text with headings, bold, italic, lists, quotes, code blocks, and links
 - **Copy for Confluence** — copies rich HTML to the clipboard so tables, headings, and code blocks paste cleanly into Confluence
+- **Copy for Word** — copies Word-friendly rich HTML with document styling for cleaner paste results
 - **Drag-to-resize** the split between panes
 - `Cmd/Ctrl+S` to save, `Cmd/Ctrl+O` to open
 
