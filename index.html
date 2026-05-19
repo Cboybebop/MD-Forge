@@ -108,6 +108,22 @@
 
     #toolbar .spacer { flex: 1; }
 
+    .toolbar-toggle {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      font-family: var(--mono);
+      font-size: 11px;
+      color: var(--text-dim);
+      user-select: none;
+      white-space: nowrap;
+    }
+
+    .toolbar-toggle input {
+      accent-color: var(--accent);
+      cursor: pointer;
+    }
+
     /* Status badge */
     #status-badge {
       font-family: var(--mono);
@@ -468,6 +484,11 @@
 
   <div class="spacer"></div>
 
+  <label class="toolbar-toggle" for="toggle-sync-scroll" title="Syncs scroll position between panes">
+    <input type="checkbox" id="toggle-sync-scroll" checked />
+    Sync scroll
+  </label>
+
   <!-- Status badge (fades in/out) -->
   <span id="status-badge" class="hidden"></span>
 </div>
@@ -567,10 +588,12 @@
   const btnSaveAs    = document.getElementById('btn-save-as');
   const btnConfluence= document.getElementById('btn-copy-confluence');
   const btnWord      = document.getElementById('btn-copy-word');
+  const toggleSyncScroll = document.getElementById('toggle-sync-scroll');
   const formatBlock  = document.getElementById('format-block');
   const formatButtons= document.querySelectorAll('.format-btn[data-command]');
   const btnLink      = document.getElementById('btn-link');
   let savedSelection = null;
+  let isSyncingScroll = false;
 
   // ── Marked.js configuration ──────────────────────────────────────
   // Enable GitHub-flavored markdown (tables, strikethrough, etc.)
@@ -793,6 +816,19 @@
     renderMarkdown('');
     setFileLabel(label);
     btnSave.disabled = true;
+  }
+
+  function syncPaneScroll(source, target) {
+    if (!toggleSyncScroll.checked || isSyncingScroll) return;
+
+    const sourceMax = source.scrollHeight - source.clientHeight;
+    const targetMax = target.scrollHeight - target.clientHeight;
+    if (sourceMax <= 0 || targetMax <= 0) return;
+
+    const ratio = source.scrollTop / sourceMax;
+    isSyncingScroll = true;
+    target.scrollTop = ratio * targetMax;
+    requestAnimationFrame(() => { isSyncingScroll = false; });
   }
 
 
@@ -1032,6 +1068,10 @@
     markDirty();
   });
 
+  mdInput.addEventListener('scroll', () => {
+    syncPaneScroll(mdInput, preview);
+  });
+
   // Handle Tab key in textarea: insert 2 spaces instead of losing focus
   mdInput.addEventListener('keydown', e => {
     if (e.key === 'Tab') {
@@ -1069,6 +1109,9 @@
   });
 
   preview.addEventListener('focus', savePreviewSelection);
+  preview.addEventListener('scroll', () => {
+    syncPaneScroll(preview, mdInput);
+  });
 
 
   // ─────────────────────────────────────────────────────────────────
