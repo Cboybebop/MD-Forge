@@ -4,6 +4,17 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>MD Forge</title>
+  <meta name="description" content="MD Forge is a fast, browser-based dual-pane Markdown editor with live editable preview, Confluence/Word copy, and local file open/save support." />
+  <meta property="og:type" content="website" />
+  <meta property="og:title" content="MD Forge" />
+  <meta property="og:description" content="A dual-pane Markdown editor that runs entirely in the browser — no build step required." />
+  <meta property="og:image" content="https://github.com/user-attachments/assets/63804023-0047-4baa-becf-360958598857" />
+  <meta property="og:url" content="https://mdforge.netlify.app/" />
+  <meta name="twitter:card" content="summary_large_image" />
+  <meta name="twitter:title" content="MD Forge" />
+  <meta name="twitter:description" content="A dual-pane Markdown editor that runs entirely in the browser — no build step required." />
+  <meta name="twitter:image" content="https://github.com/user-attachments/assets/63804023-0047-4baa-becf-360958598857" />
+  <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='10' fill='%23171b26'/%3E%3Cpath d='M16 16h20l12 12v20H16z' fill='none' stroke='%23e8a44a' stroke-width='4'/%3E%3Cpath d='M36 16v12h12' fill='none' stroke='%23e8a44a' stroke-width='4'/%3E%3Cpath d='M24 40h16M24 48h16' stroke='%23d4cfc8' stroke-width='4'/%3E%3C/svg%3E" />
 
   <!-- Marked: Markdown → HTML parser -->
   <script src="https://cdnjs.cloudflare.com/ajax/libs/marked/9.1.6/marked.min.js"></script>
@@ -107,6 +118,22 @@
     .btn svg { width: 14px; height: 14px; flex-shrink: 0; }
 
     #toolbar .spacer { flex: 1; }
+
+    .toolbar-toggle {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      font-family: var(--mono);
+      font-size: 11px;
+      color: var(--text-dim);
+      user-select: none;
+      white-space: nowrap;
+    }
+
+    .toolbar-toggle input {
+      accent-color: var(--accent);
+      cursor: pointer;
+    }
 
     /* Status badge */
     #status-badge {
@@ -468,6 +495,11 @@
 
   <div class="spacer"></div>
 
+  <label class="toolbar-toggle" for="toggle-sync-scroll" title="Syncs scroll position between panes">
+    <input type="checkbox" id="toggle-sync-scroll" checked />
+    Sync scroll
+  </label>
+
   <!-- Status badge (fades in/out) -->
   <span id="status-badge" class="hidden"></span>
 </div>
@@ -567,10 +599,12 @@
   const btnSaveAs    = document.getElementById('btn-save-as');
   const btnConfluence= document.getElementById('btn-copy-confluence');
   const btnWord      = document.getElementById('btn-copy-word');
+  const toggleSyncScroll = document.getElementById('toggle-sync-scroll');
   const formatBlock  = document.getElementById('format-block');
   const formatButtons= document.querySelectorAll('.format-btn[data-command]');
   const btnLink      = document.getElementById('btn-link');
   let savedSelection = null;
+  let isSyncingScroll = false;
 
   // ── Marked.js configuration ──────────────────────────────────────
   // Enable GitHub-flavored markdown (tables, strikethrough, etc.)
@@ -793,6 +827,19 @@
     renderMarkdown('');
     setFileLabel(label);
     btnSave.disabled = true;
+  }
+
+  function syncPaneScroll(source, target) {
+    if (!toggleSyncScroll.checked || isSyncingScroll) return;
+
+    const sourceMax = source.scrollHeight - source.clientHeight;
+    const targetMax = target.scrollHeight - target.clientHeight;
+    if (sourceMax <= 0 || targetMax <= 0) return;
+
+    const ratio = source.scrollTop / sourceMax;
+    isSyncingScroll = true;
+    target.scrollTop = ratio * targetMax;
+    requestAnimationFrame(() => { isSyncingScroll = false; });
   }
 
 
@@ -1032,6 +1079,10 @@
     markDirty();
   });
 
+  mdInput.addEventListener('scroll', () => {
+    syncPaneScroll(mdInput, preview);
+  });
+
   // Handle Tab key in textarea: insert 2 spaces instead of losing focus
   mdInput.addEventListener('keydown', e => {
     if (e.key === 'Tab') {
@@ -1069,6 +1120,9 @@
   });
 
   preview.addEventListener('focus', savePreviewSelection);
+  preview.addEventListener('scroll', () => {
+    syncPaneScroll(preview, mdInput);
+  });
 
 
   // ─────────────────────────────────────────────────────────────────
