@@ -1,4 +1,5 @@
 # MD Forge
+<img width="3731" height="1053" alt="image" src="https://github.com/user-attachments/assets/63804023-0047-4baa-becf-360958598857" />
 
 A dual-pane Markdown editor that runs entirely in the browser — no build step, no dependencies to install.
 
@@ -25,7 +26,7 @@ Both loaded from cdnjs — no npm, no bundler.
 ## Deploy to Netlify
 
 ### Option A — Netlify Drop
-Drag the project folder onto [app.netlify.com/drop](https://app.netlify.com/drop)
+Ready made for an instant deploye via a drag & drop of the project folder onto [app.netlify.com/drop](https://app.netlify.com/drop)
 
 ### Option B — Git-connected deploy
 ```bash
