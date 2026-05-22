@@ -135,6 +135,35 @@
       cursor: pointer;
     }
 
+    .pane-mode-controls {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      font-family: var(--mono);
+      font-size: 11px;
+      color: var(--text-dim);
+      white-space: nowrap;
+    }
+
+    .pane-mode-controls select,
+    .pane-mode-controls input[type="range"] {
+      background: var(--bg);
+      color: var(--text);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      font-family: var(--mono);
+      font-size: 11px;
+      height: 28px;
+    }
+
+    .pane-mode-controls select { padding: 0 8px; cursor: pointer; }
+    .pane-mode-controls input[type="range"] {
+      width: 110px;
+      cursor: ew-resize;
+      padding: 0 4px;
+    }
+    .pane-mode-controls input[type="range"]:disabled { opacity: 0.45; cursor: not-allowed; }
+
     /* Status badge */
     #status-badge {
       font-family: var(--mono);
@@ -495,6 +524,17 @@
 
   <div class="spacer"></div>
 
+  <div class="pane-mode-controls" aria-label="Pane layout controls">
+    <label for="pane-mode-select">Pane mode</label>
+    <select id="pane-mode-select" title="Choose whether to show one pane or both panes">
+      <option value="both">Both panes</option>
+      <option value="left">Source only</option>
+      <option value="right">Preview only</option>
+    </select>
+    <label for="split-width">Split</label>
+    <input type="range" id="split-width" min="20" max="80" step="1" value="50" title="Adjust left/right pane width" />
+  </div>
+
   <label class="toolbar-toggle" for="toggle-sync-scroll" title="Syncs scroll position between panes">
     <input type="checkbox" id="toggle-sync-scroll" checked />
     Sync scroll
@@ -603,8 +643,15 @@
   const formatBlock  = document.getElementById('format-block');
   const formatButtons= document.querySelectorAll('.format-btn[data-command]');
   const btnLink      = document.getElementById('btn-link');
+  const paneModeSelect = document.getElementById('pane-mode-select');
+  const splitWidth = document.getElementById('split-width');
+  const dragHandle = document.getElementById('drag-handle');
+  const leftPane   = document.getElementById('left-pane');
+  const rightPane  = document.getElementById('right-pane');
+  const editorArea = document.getElementById('editor-area');
   let savedSelection = null;
   let isSyncingScroll = false;
+  let leftWidthPercent = 50;
 
   // ── Marked.js configuration ──────────────────────────────────────
   // Enable GitHub-flavored markdown (tables, strikethrough, etc.)
@@ -840,6 +887,35 @@
     isSyncingScroll = true;
     target.scrollTop = ratio * targetMax;
     requestAnimationFrame(() => { isSyncingScroll = false; });
+  }
+
+  function setLeftPaneWidth(percent) {
+    leftWidthPercent = Math.min(80, Math.max(20, percent));
+    leftPane.style.width = `${leftWidthPercent}%`;
+    splitWidth.value = `${Math.round(leftWidthPercent)}`;
+  }
+
+  function applyPaneMode(mode = paneModeSelect.value) {
+    if (mode === 'left') {
+      leftPane.style.display = 'flex';
+      rightPane.style.display = 'none';
+      dragHandle.style.display = 'none';
+      splitWidth.disabled = true;
+      return;
+    }
+    if (mode === 'right') {
+      leftPane.style.display = 'none';
+      rightPane.style.display = 'flex';
+      dragHandle.style.display = 'none';
+      splitWidth.disabled = true;
+      return;
+    }
+
+    leftPane.style.display = 'flex';
+    rightPane.style.display = 'flex';
+    dragHandle.style.display = 'block';
+    splitWidth.disabled = false;
+    setLeftPaneWidth(leftWidthPercent);
   }
 
 
@@ -1155,9 +1231,6 @@
   // ─────────────────────────────────────────────────────────────────
   //  DRAG-TO-RESIZE the split panes
   // ─────────────────────────────────────────────────────────────────
-  const dragHandle = document.getElementById('drag-handle');
-  const leftPane   = document.getElementById('left-pane');
-  const editorArea = document.getElementById('editor-area');
   let   isDragging = false;
 
   dragHandle.addEventListener('mousedown', e => {
@@ -1173,7 +1246,7 @@
     const ratio = (e.clientX - rect.left) / rect.width;
     // Clamp between 20% and 80% so neither pane disappears
     const pct   = Math.min(0.80, Math.max(0.20, ratio));
-    leftPane.style.width = `${pct * 100}%`;
+    setLeftPaneWidth(pct * 100);
   });
 
   document.addEventListener('mouseup', () => {
@@ -1182,6 +1255,15 @@
     dragHandle.classList.remove('dragging');
     document.body.style.cursor     = '';
     document.body.style.userSelect = '';
+  });
+
+  paneModeSelect.addEventListener('change', () => {
+    applyPaneMode(paneModeSelect.value);
+  });
+
+  splitWidth.addEventListener('input', () => {
+    setLeftPaneWidth(Number(splitWidth.value));
+    applyPaneMode(paneModeSelect.value);
   });
 
 
@@ -1203,6 +1285,8 @@
     btnSave.classList.add('hidden');
   }
 
+  setLeftPaneWidth(leftWidthPercent);
+  applyPaneMode('both');
   setTimeout(resetDocumentState, 0);
 
 </script>
